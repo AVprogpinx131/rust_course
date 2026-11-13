@@ -1,3 +1,10 @@
+mod builtins;
+mod expand;
+mod external;
+mod parser;
+
+use builtins::Flow;
+
 fn main() -> Result<(), std::io::Error> {
     let mut buffer = String::new();
     let stdin = std::io::stdin();
@@ -8,32 +15,16 @@ fn main() -> Result<(), std::io::Error> {
             break;
         }
 
-        let mut parts = buffer.split_whitespace();
-        let Some(command) = parts.next() else { continue; };
-        let args: Vec<&str> = parts.collect();
+        let Some((command, raw_args)) = parser::parse(&buffer) else {
+            continue;
+        };
+        let args: Vec<String> = raw_args.iter().flat_map(|a| expand::expand(a)).collect();
 
-        match command {
-            "exit" => break,
-            "cd" => {
-                let target = args.first().copied().unwrap_or(".");
-                if let Err(e) = std::env::set_current_dir(target) {
-                    eprintln!("cd: {}: {}", target, e);
-                }
-            }
-            "ls" => {
-                let dir = args.first().copied().unwrap_or(".");
-                match std::fs::read_dir(dir) {
-                    Ok(entries) => {
-                        for entry in entries.flatten() {
-                            println!("{}", entry.file_name().to_string_lossy());
-                        }
-                    }
-                    Err(e) => eprintln!("ls: {}: {}", dir, e),
-                }
-            }
-            _ => eprintln!("{}: command not found", command), 
+        match builtins::run(&command, &args) {
+            Some(Flow::Exit) => break,
+            Some(Flow::Continue) => {}
+            None => external::run(&command, &args),
         }
-        
     }
 
     Ok(())
